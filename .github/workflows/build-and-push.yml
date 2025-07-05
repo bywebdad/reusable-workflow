@@ -1,0 +1,95 @@
+name: Docker Build and Publish
+
+on:
+  workflow_call:
+    inputs:
+      project_name:
+        required: true
+        type: string
+        description: 'Name of the project'
+      environment:
+        required: true
+        type: string
+        description: 'Environment'
+      organization:
+        required: true
+        type: string
+        description: 'GitHub organization name'
+      add_timestamp_tag:
+        required: false
+        type: boolean
+        default: false
+        description: 'Whether to add timestamp-commit hash tag to the image'
+      build_method:
+        required: false
+        type: string
+        default: 'compose'
+        description: 'Build method: compose or dockerfile'
+      docker_compose_file:
+        required: false
+        type: string
+        default: 'build/docker-compose.${{ inputs.environment }}.yml'
+        description: 'Path to docker-compose file'
+      dockerfile_path:
+        required: false
+        type: string
+        default: 'deployments/Dockerfile'
+        description: 'Path to Dockerfile'
+      build_context:
+        required: false
+        type: string
+        default: '.'
+        description: 'Build context for docker build'
+    secrets:
+      GHCR_TOKEN:
+        required: true
+        description: 'GitHub Container Registry token'
+
+jobs:
+  build-and-publish:
+    name: Build and publish docker image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up variables
+        id: vars
+        run: |
+          echo "IMAGE_NAME=ghcr.io/${{ inputs.organization }}/${{ inputs.project_name }}:${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          if [[ "${{ inputs.add_timestamp_tag }}" == "true" ]]; then
+            COMMIT_HASH=$(git rev-parse --short HEAD)
+            TIMESTAMP=$(date +%Y%m%d%H%M)
+            IMAGE_TAG="${TIMESTAMP}-${COMMIT_HASH}"
+            echo "TIMESTAMP_TAG=ghcr.io/${{ inputs.organization }}/${{ inputs.project_name }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+            echo "HAS_TIMESTAMP_TAG=true" >> $GITHUB_OUTPUT
+          else
+            echo "HAS_TIMESTAMP_TAG=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build image with docker-compose
+        if: inputs.build_method == 'compose'
+        run: docker compose -f ${{ inputs.docker_compose_file }} build
+
+      - name: Build image with Dockerfile
+        if: inputs.build_method == 'dockerfile'
+        run: |
+          if [[ "${{ inputs.add_timestamp_tag }}" == "true" ]]; then
+            docker build -t ${{ steps.vars.outputs.IMAGE_NAME }} -t ${{ steps.vars.outputs.TIMESTAMP_TAG }} -f ${{ inputs.dockerfile_path }} ${{ inputs.build_context }}
+          else
+            docker build -t ${{ steps.vars.outputs.IMAGE_NAME }} -f ${{ inputs.dockerfile_path }} ${{ inputs.build_context }}
+          fi
+
+      - name: Add timestamp tag if requested
+        if: inputs.build_method == 'compose' && steps.vars.outputs.HAS_TIMESTAMP_TAG == 'true'
+        run: docker tag ${{ steps.vars.outputs.IMAGE_NAME }} ${{ steps.vars.outputs.TIMESTAMP_TAG }}
+
+      - name: Login to GitHub Container Registry
+        run: echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u ${{ inputs.organization }} --password-stdin
+
+      - name: Push image
+        run: |
+          docker push ${{ steps.vars.outputs.IMAGE_NAME }}
+          if [[ "${{ steps.vars.outputs.HAS_TIMESTAMP_TAG }}" == "true" ]]; then
+            docker push ${{ steps.vars.outputs.TIMESTAMP_TAG }}
+          fi
