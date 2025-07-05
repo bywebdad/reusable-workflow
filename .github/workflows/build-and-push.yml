@@ -56,12 +56,14 @@ jobs:
       - name: Set up variables
         id: vars
         run: |
-          echo "IMAGE_NAME=ghcr.io/${{ inputs.organization }}/${{ inputs.project_name }}:${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          ORG_LOWER=$(echo "${{ inputs.organization }}" | tr '[:upper:]' '[:lower:]')
+          PROJECT_LOWER=$(echo "${{ inputs.project_name }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_NAME=ghcr.io/${ORG_LOWER}/${PROJECT_LOWER}:${{ inputs.environment }}" >> $GITHUB_OUTPUT
           if [[ "${{ inputs.add_timestamp_tag }}" == "true" ]]; then
             COMMIT_HASH=$(git rev-parse --short HEAD)
             TIMESTAMP=$(date +%Y%m%d%H%M)
             IMAGE_TAG="${TIMESTAMP}-${COMMIT_HASH}"
-            echo "TIMESTAMP_TAG=ghcr.io/${{ inputs.organization }}/${{ inputs.project_name }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+            echo "TIMESTAMP_TAG=ghcr.io/${ORG_LOWER}/${PROJECT_LOWER}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
             echo "HAS_TIMESTAMP_TAG=true" >> $GITHUB_OUTPUT
           else
             echo "HAS_TIMESTAMP_TAG=false" >> $GITHUB_OUTPUT
