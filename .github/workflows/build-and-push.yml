@@ -53,6 +53,8 @@ jobs:
   build-and-publish:
     name: Build and publish docker image
     runs-on: ubuntu-latest
+    outputs:
+      timestamp_tag: ${{ steps.vars.outputs.TIMESTAMP_TAG }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
