@@ -54,7 +54,6 @@ jobs:
     name: Build and publish docker image
     runs-on: ubuntu-latest
     outputs:
-      image_name: ${{ steps.vars.outputs.IMAGE_NAME }}
       timestamp_tag: ${{ steps.vars.outputs.TIMESTAMP_TAG }}
     steps:
       - name: Checkout code
