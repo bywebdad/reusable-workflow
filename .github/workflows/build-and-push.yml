@@ -45,16 +45,32 @@ on:
         required: true
         description: 'GitHub Container Registry token'
     outputs:
+      project_name:
+        description: "Project name"
+        value: ${{ jobs.build-and-publish.outputs.project_name }}
+      environment:
+        description: "Environment"
+        value: ${{ jobs.build-and-publish.outputs.environment }}
+      organization:
+        description: "Organization"
+        value: ${{ jobs.build-and-publish.outputs.organization }}
       timestamp_tag:
         description: "Image name with timestamp tag"
         value: ${{ jobs.build-and-publish.outputs.timestamp_tag }}
+      image_name:
+        description: "Main image name"
+        value: ${{ jobs.build-and-publish.outputs.image_name }}
 
 jobs:
   build-and-publish:
     name: Build and publish docker image
     runs-on: ubuntu-latest
     outputs:
+      project_name: ${{ inputs.project_name }}
+      environment: ${{ inputs.environment }}
+      organization: ${{ inputs.organization }}
       timestamp_tag: ${{ steps.vars.outputs.TIMESTAMP_TAG }}
+      image_name: ${{ steps.vars.outputs.IMAGE_NAME }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
