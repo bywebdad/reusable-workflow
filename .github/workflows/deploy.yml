@@ -54,6 +54,9 @@ jobs:
     name: Deploy to ${{ inputs.environment }} environment
     runs-on: ubuntu-latest
     steps:
+      - name: Set lowercase organization
+        id: lowercase
+        run: echo "org_lower=$(echo '${{ inputs.organization }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
       - name: Checkout code
         if: inputs.deploy_method == 'vds'
         uses: actions/checkout@v3
