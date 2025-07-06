@@ -23,18 +23,10 @@ on:
         required: false
         type: string
         description: 'Remote path on VDS server'
-      project_name:
-        required: true
-        type: string
-        description: 'Project name from build job'
       environment:
         required: true
         type: string
         description: 'Environment from build job'
-      organization:
-        required: true
-        type: string
-        description: 'Organization from build job'
     secrets:
       DEVTRON_WEBHOOK_TOKEN:
         required: false
@@ -51,12 +43,9 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to ${{ inputs.environment }} environment
+    name: Deploy to ${{ inputs.environment }}
     runs-on: ubuntu-latest
     steps:
-      - name: Set lowercase organization
-        id: lowercase
-        run: echo "org_lower=$(echo '${{ inputs.organization }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
       - name: Checkout code
         if: inputs.deploy_method == 'vds'
         uses: actions/checkout@v3
@@ -64,12 +53,11 @@ jobs:
       - name: Call Devtron Webhook for deploy
         if: inputs.deploy_method == 'devtron'
         run: |
-          IMAGE_TAG="${{ inputs.image_tag }}"
           curl --location --request POST \
           "${{ inputs.devtron_webhook_url }}" \
             --header 'Content-Type: application/json' \
             --header 'api-token: ${{ secrets.DEVTRON_WEBHOOK_TOKEN }}' \
-            --data-raw "{\"dockerImage\":\"${IMAGE_TAG}\"}"
+            --data-raw "{\"dockerImage\":\"${{ inputs.image_tag }}\"}"
 
       - name: Remove old code on VDS
         if: inputs.deploy_method == 'vds'
@@ -99,7 +87,7 @@ jobs:
         with:
           command: |
             cd ${{ inputs.vds_deploy_path }}
-            docker pull ghcr.io/${{ inputs.organization }}/${{ inputs.project_name }}:${{ inputs.environment }}
+            docker pull ${{ inputs.image_tag }}
             docker compose -f docker-compose.${{ inputs.environment }}.yml up --build -d
           host: ${{ secrets.SSH_HOST }}
           port: ${{ secrets.SSH_PORT }}
