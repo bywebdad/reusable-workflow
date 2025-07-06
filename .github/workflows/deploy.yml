@@ -1,0 +1,104 @@
+name: Deploy Application
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        required: true
+        type: string
+        description: 'Docker image tag to deploy'
+      deploy_method:
+        required: true
+        type: string
+        description: 'Deploy method: devtron or vds'
+      devtron_webhook_url:
+        required: false
+        type: string
+        description: 'Devtron webhook URL (for devtron method)'
+      docker_compose_file:
+        required: false
+        type: string
+        description: 'Path to docker-compose file for VDS deployment'
+      vds_deploy_path:
+        required: false
+        type: string
+        description: 'Remote path on VDS server'
+      project_name:
+        required: true
+        type: string
+        description: 'Project name from build job'
+      environment:
+        required: true
+        type: string
+        description: 'Environment from build job'
+      organization:
+        required: true
+        type: string
+        description: 'Organization from build job'
+    secrets:
+      DEVTRON_WEBHOOK_TOKEN:
+        required: false
+        description: 'Devtron webhook token'
+      SSH_HOST:
+        required: false
+        description: 'SSH host for VDS deployment'
+      SSH_PORT:
+        required: false
+        description: 'SSH port for VDS deployment'
+      SSH_PRIVATE_KEY:
+        required: false
+        description: 'SSH private key for VDS deployment'
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }} environment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        if: inputs.deploy_method == 'vds'
+        uses: actions/checkout@v3
+
+      - name: Call Devtron Webhook for deploy
+        if: inputs.deploy_method == 'devtron'
+        run: |
+          IMAGE_TAG="${{ inputs.image_tag }}"
+          curl --location --request POST \
+          "${{ inputs.devtron_webhook_url }}" \
+            --header 'Content-Type: application/json' \
+            --header 'api-token: ${{ secrets.DEVTRON_WEBHOOK_TOKEN }}' \
+            --data-raw "{\"dockerImage\":\"${IMAGE_TAG}\"}"
+
+      - name: Remove old code on VDS
+        if: inputs.deploy_method == 'vds'
+        uses: garygrossgarten/github-action-ssh@release
+        with:
+          command: |
+            rm -rf ${{ inputs.vds_deploy_path }}
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: root
+          privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Send docker-compose file to VDS
+        if: inputs.deploy_method == 'vds'
+        uses: garygrossgarten/github-action-scp@release
+        with:
+          local: ./${{ inputs.docker_compose_file }}
+          remote: ${{ inputs.vds_deploy_path }}/docker-compose.${{ inputs.environment }}.yml
+          host: ${{ secrets.SSH_HOST }}
+          username: root
+          port: ${{ secrets.SSH_PORT }}
+          privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy on VDS server
+        if: inputs.deploy_method == 'vds'
+        uses: garygrossgarten/github-action-ssh@release
+        with:
+          command: |
+            cd ${{ inputs.vds_deploy_path }}
+            docker pull ghcr.io/${{ inputs.organization }}/${{ inputs.project_name }}:${{ inputs.environment }}
+            docker compose -f docker-compose.${{ inputs.environment }}.yml up --build -d
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: root
+          privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
