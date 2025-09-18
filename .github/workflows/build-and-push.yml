@@ -35,6 +35,11 @@ on:
         type: string
         default: 'deployments/Dockerfile'
         description: 'Path to Dockerfile'
+      env_file_path:
+        required: false
+        type: string
+        default: ''
+        description: 'Path to env file'
       build_context:
         required: false
         type: string
@@ -82,6 +87,10 @@ jobs:
           else
             echo "HAS_TIMESTAMP_TAG=false" >> $GITHUB_OUTPUT
           fi
+
+      - name: Prepare env file
+        if: inputs.env_file_path != ''
+        run: cp ${{inputs.env_file_path}} .env
 
       - name: Build image with docker-compose
         if: inputs.build_method == 'compose'
