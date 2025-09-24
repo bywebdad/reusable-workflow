@@ -32,6 +32,11 @@ on:
         type: string
         default: 'root'
         description: 'SSH server username'
+      env_file_path:
+        required: false
+        type: string
+        default: ''
+        description: 'env file path'
     secrets:
       DEVTRON_WEBHOOK_TOKEN:
         required: false
@@ -84,6 +89,17 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ inputs.user_name }}
           port: ${{ secrets.SSH_PORT }}
+          privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Send .env file to VDS
+        if: inputs.deploy_method == 'vds' && inputs.env_file_path != ''
+        uses: garygrossgarten/github-action-scp@release
+        with:
+          local: ./${{ inputs.env_file_path }}
+          remote: ${{ inputs.vds_deploy_path }}/.env
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ inputs.user_name }}
           privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Deploy on VDS server
