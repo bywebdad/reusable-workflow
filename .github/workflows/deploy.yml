@@ -37,6 +37,10 @@ on:
         type: string
         default: ''
         description: 'env file path'
+      organization:
+        required: false
+        type: string
+        description: 'GitHub organization name'
     secrets:
       DEVTRON_WEBHOOK_TOKEN:
         required: false
@@ -50,6 +54,9 @@ on:
       SSH_PRIVATE_KEY:
         required: false
         description: 'SSH private key for VDS deployment'
+      GHCR_TOKEN:
+        required: false
+        description: 'GitHub Container Registry token'
 
 jobs:
   deploy:
@@ -101,6 +108,17 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           username: ${{ inputs.user_name }}
           privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Login to GHCR on VDS
+        if: inputs.deploy_method == 'vds'
+        uses: garygrossgarten/github-action-ssh@release
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ inputs.user_name }}
+          privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
+          command: |
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ inputs.organization }} --password-stdin
 
       - name: Deploy on VDS server
         if: inputs.deploy_method == 'vds'
