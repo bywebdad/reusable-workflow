@@ -27,6 +27,11 @@ on:
         required: true
         type: string
         description: 'Environment from build job'
+      user_name:
+        required: false
+        type: string
+        default: 'root'
+        description: 'SSH server username'
     secrets:
       DEVTRON_WEBHOOK_TOKEN:
         required: false
@@ -67,7 +72,7 @@ jobs:
             rm -rf ${{ inputs.vds_deploy_path }}
           host: ${{ secrets.SSH_HOST }}
           port: ${{ secrets.SSH_PORT }}
-          username: root
+          username: ${{ inputs.user_name }}
           privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Send docker-compose file to VDS
@@ -77,7 +82,7 @@ jobs:
           local: ./${{ inputs.docker_compose_file }}
           remote: ${{ inputs.vds_deploy_path }}/docker-compose.${{ inputs.environment }}.yml
           host: ${{ secrets.SSH_HOST }}
-          username: root
+          username: ${{ inputs.user_name }}
           port: ${{ secrets.SSH_PORT }}
           privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
 
@@ -91,5 +96,5 @@ jobs:
             docker compose -f docker-compose.${{ inputs.environment }}.yml up --build -d
           host: ${{ secrets.SSH_HOST }}
           port: ${{ secrets.SSH_PORT }}
-          username: root
+          username: ${{ inputs.user_name }}
           privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
