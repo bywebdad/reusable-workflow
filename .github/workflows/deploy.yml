@@ -132,3 +132,16 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           username: ${{ inputs.user_name }}
           privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy on old docker VDS server
+        if: inputs.deploy_method == 'old-vds'
+        uses: garygrossgarten/github-action-ssh@release
+        with:
+          command: |
+            cd ${{ inputs.vds_deploy_path }}
+            docker pull ${{ inputs.image_tag }}
+            docker-compose -f docker-compose.${{ inputs.environment }}.yml up --build -d
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ inputs.user_name }}
+          privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
