@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  workflow_call:
+    inputs:
+      project_type:
+        required: true
+        type: string
+        description: 'Project type: go-backend | next-backend | next-frontend'
+      run_tests:
+        required: false
+        type: boolean
+        default: true
+        description: 'Whether to run tests'
+      node_version:
+        required: false
+        type: string
+        default: '24'
+        description: 'Node.js version'
+      go_version:
+        required: false
+        type: string
+        default: '1.23'
+        description: 'Go version'
+      has_prisma:
+        required: false
+        type: boolean
+        default: false
+        description: 'Run Prisma client generation before type check (next-backend only)'
+      working_directory:
+        required: false
+        type: string
+        default: '.'
+        description: 'Root directory for all commands'
+    secrets:
+      DIRECT_DATABASE_URI:
+        required: false
+        description: 'Database URI passed to Prisma generate (next-backend with has_prisma)'
+
+jobs:
+  ci:
+    name: CI (${{ inputs.project_type }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Node.js (next-backend / next-frontend) ────────────────────────────
+
+      - name: Setup Node.js
+        if: inputs.project_type == 'next'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: 'npm'
+          cache-dependency-path: ${{ inputs.working_directory }}/package-lock.json
+
+      - name: Install dependencies
+        if: inputs.project_type == 'next'
+        run: npm ci
+
+      - name: Format check
+        if: inputs.project_type == 'next'
+        run: npm run format:check
+
+      - name: Generate Prisma client
+        if: inputs.project_type == 'next' && inputs.has_prisma
+        run: npm run generate
+        env:
+          DIRECT_DATABASE_URI: ${{ secrets.DIRECT_DATABASE_URI }}
+
+      - name: Type check
+        if: inputs.project_type == 'next'
+        run: npx tsc --noEmit
+
+      - name: Lint
+        if: inputs.project_type == 'next'
+        run: npm run lint
+
+      - name: Test
+        if: inputs.project_type == 'next' && inputs.run_tests
+        run: npm test -- --ci --coverage --passWithNoTests
+
+      # ── Go (go-backend) ───────────────────────────────────────────────────
+
+      - name: Setup Go
+        if: inputs.project_type == 'go-backend'
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go_version }}
+
+      - name: Lint
+        if: inputs.project_type == 'go-backend'
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: ${{ inputs.working_directory }}
+
+      - name: Test
+        if: inputs.project_type == 'go-backend' && inputs.run_tests
+        run: go test ./...
