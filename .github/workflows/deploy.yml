@@ -10,11 +10,15 @@ on:
       deploy_method:
         required: true
         type: string
-        description: 'Deploy method: devtron or vds'
+        description: 'Deploy method: dokploy, devtron or vds'
       devtron_webhook_url:
         required: false
         type: string
         description: 'Devtron webhook URL (for devtron method)'
+      dokploy_webhook_url:
+        required: false
+        type: string
+        description: 'Dokploy webhook URL (for dokploy method)'
       docker_compose_file:
         required: false
         type: string
@@ -75,6 +79,12 @@ jobs:
             --header 'Content-Type: application/json' \
             --header 'api-token: ${{ secrets.DEVTRON_WEBHOOK_TOKEN }}' \
             --data-raw "{\"dockerImage\":\"${{ inputs.image_tag }}\"}"
+
+      - name: Call Dokploy Webhook for deploy
+        if: inputs.deploy_method == 'dokploy'
+        run: |
+          curl -X POST -H "Content-Type: application/json" \
+          ${{ inputs.dokploy_webhook_url }}
 
       - name: Remove old code on VDS
         if: inputs.deploy_method == 'vds' || inputs.deploy_method == 'old-vds'
