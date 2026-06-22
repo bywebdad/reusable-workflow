@@ -167,9 +167,12 @@ jobs:
         run: |
           ENV=$([ "$ENVN" = "stage" ] && echo stage || echo production)
           PROD=$([ "$ENV" = "production" ] && echo true || echo false)
-          gh api -X POST "repos/$GITHUB_REPOSITORY/deployments" --input - <<JSON
+          ID=$(gh api -X POST "repos/$GITHUB_REPOSITORY/deployments" --input - --jq '.id' <<JSON
           { "ref": "$GITHUB_SHA", "environment": "$ENV",
             "description": "CI deploy ($GITHUB_RUN_ID)",
             "auto_merge": false, "required_contexts": [],
             "production_environment": $PROD, "transient_environment": false }
           JSON
+          )
+          gh api -X POST "repos/$GITHUB_REPOSITORY/deployments/$ID/statuses" \
+            -f state=success -f environment="$ENV" -f description="Deployed"
