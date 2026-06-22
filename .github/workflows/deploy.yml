@@ -66,6 +66,9 @@ jobs:
   deploy:
     name: Deploy to ${{ inputs.environment }}
     runs-on: ubuntu-latest
+    permissions:
+      deployments: write
+      contents: read
     steps:
       - name: Checkout code
         if: inputs.deploy_method == 'vds' || inputs.deploy_method == 'old-vds'
@@ -155,3 +158,18 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           username: ${{ inputs.user_name }}
           privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Mark deployment in GitHub
+        if: contains(fromJSON('["stage","release","prod"]'), inputs.environment)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENVN: ${{ inputs.environment }}
+        run: |
+          ENV=$([ "$ENVN" = "stage" ] && echo stage || echo production)
+          PROD=$([ "$ENV" = "production" ] && echo true || echo false)
+          gh api -X POST "repos/$GITHUB_REPOSITORY/deployments" --input - <<JSON
+          { "ref": "$GITHUB_SHA", "environment": "$ENV",
+            "description": "CI deploy ($GITHUB_RUN_ID)",
+            "auto_merge": false, "required_contexts": [],
+            "production_environment": $PROD, "transient_environment": false }
+          JSON
