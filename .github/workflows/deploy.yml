@@ -45,6 +45,11 @@ on:
         required: false
         type: string
         description: 'GitHub organization name'
+      cleanup_old_images:
+        required: false
+        type: boolean
+        default: false
+        description: 'Remove old unused docker images after deploy'
     secrets:
       DEVTRON_WEBHOOK_TOKEN:
         required: false
@@ -158,6 +163,31 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           username: ${{ inputs.user_name }}
           privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Cleanup old images for current service
+        if: (inputs.deploy_method == 'vds' || inputs.deploy_method == 'old-vds') && inputs.cleanup_old_images == true
+        uses: garygrossgarten/github-action-ssh@release
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ inputs.user_name }}
+          privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
+          command: |
+            echo "Cleanup images for current deploy: ${{ inputs.image_tag }}"
+
+            IMAGE="${{ inputs.image_tag }}"
+
+            SERVICE=$(echo "$IMAGE" | awk -F'/' '{print $2}' | awk -F':' '{print $1}')
+
+            echo "Service detected: $SERVICE"
+
+            CURRENT_IMAGE="$IMAGE"
+
+            docker images ghcr.io/wisp-game/$SERVICE \
+              --format "{{.Repository}}:{{.Tag}} {{.ID}}" \
+            | grep -v "$CURRENT_IMAGE" \
+            | awk '{print $2}' \
+            | xargs -r docker rmi
 
       - name: Mark deployment in GitHub
         if: contains(fromJSON('["stage","release","prod"]'), inputs.environment)
