@@ -1,0 +1,266 @@
+name: Ephemeral Preview Environment
+
+on:
+  workflow_call:
+    inputs:
+      project_name:
+        required: true
+        type: string
+        description: 'Project name (used for GHCR image path and Helm release name)'
+      organization:
+        required: true
+        type: string
+        description: 'GitHub org or user (for GHCR path, e.g. my-org)'
+      helm_chart_path:
+        required: true
+        type: string
+        description: 'Path to Helm chart in the repo (e.g. ./deployment/my-chart)'
+      base_domain:
+        required: true
+        type: string
+        description: 'Base domain for preview URLs (e.g. preview.example.com → preview URL becomes slug.preview.example.com)'
+      cluster_name:
+        required: false
+        type: string
+        default: 'general'
+        description: 'DigitalOcean Kubernetes cluster name'
+      build_method:
+        required: false
+        type: string
+        default: 'dockerfile'
+        description: 'Build method: dockerfile or compose'
+      dockerfile_path:
+        required: false
+        type: string
+        default: 'Dockerfile'
+        description: 'Path to Dockerfile (for dockerfile build method)'
+      build_context:
+        required: false
+        type: string
+        default: '.'
+        description: 'Docker build context (for dockerfile build method)'
+      docker_compose_file:
+        required: false
+        type: string
+        default: 'docker-compose.yml'
+        description: 'Path to docker-compose file (for compose build method)'
+      compose_base_tag:
+        required: false
+        type: string
+        default: 'dev'
+        description: 'Image tag that docker-compose produces (e.g. dev) — used to re-tag for the preview'
+      helm_extra_args:
+        required: false
+        type: string
+        default: ''
+        description: 'Extra args appended to helm upgrade (e.g. --set foo=bar --values preview.yaml)'
+      url_scheme:
+        required: false
+        type: string
+        default: 'https'
+        description: 'URL scheme for the preview link comment (https or http)'
+    secrets:
+      DOCTL_TOKEN:
+        required: true
+        description: 'DigitalOcean API token (doctl)'
+      GHCR_TOKEN:
+        required: true
+        description: 'GitHub Container Registry token (write:packages scope)'
+
+jobs:
+  deploy-preview:
+    name: Deploy preview environment
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Sanitize branch name
+        id: branch
+        run: |
+          SLUG="${{ github.head_ref }}"
+          SLUG="${SLUG//\//-}"
+          SLUG=$(echo "$SLUG" | tr '[:upper:]' '[:lower:]')
+          SLUG=$(echo "$SLUG" | sed 's/[^a-z0-9-]//g')
+          SLUG=$(echo "$SLUG" | cut -c1-53)
+          echo "slug=$SLUG" >> $GITHUB_OUTPUT
+
+      - name: Compute image name
+        id: vars
+        run: |
+          ORG=$(echo "${{ inputs.organization }}" | tr '[:upper:]' '[:lower:]')
+          PROJECT=$(echo "${{ inputs.project_name }}" | tr '[:upper:]' '[:lower:]')
+          echo "image=ghcr.io/${ORG}/${PROJECT}:${{ steps.branch.outputs.slug }}" >> $GITHUB_OUTPUT
+          echo "source_image=ghcr.io/${ORG}/${PROJECT}:${{ inputs.compose_base_tag }}" >> $GITHUB_OUTPUT
+
+      - name: Login to GitHub Container Registry
+        run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ inputs.organization }}" --password-stdin
+
+      - name: Build image (Dockerfile)
+        if: inputs.build_method == 'dockerfile'
+        run: |
+          docker build \
+            -t "${{ steps.vars.outputs.image }}" \
+            -f "${{ inputs.dockerfile_path }}" \
+            "${{ inputs.build_context }}"
+
+      - name: Build image (docker-compose)
+        if: inputs.build_method == 'compose'
+        run: docker compose -f "${{ inputs.docker_compose_file }}" build
+
+      - name: Tag image for branch (compose)
+        if: inputs.build_method == 'compose'
+        run: docker tag "${{ steps.vars.outputs.source_image }}" "${{ steps.vars.outputs.image }}"
+
+      - name: Push image
+        run: docker push "${{ steps.vars.outputs.image }}"
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DOCTL_TOKEN }}
+
+      - name: Configure Kubernetes kubeconfig
+        run: doctl kubernetes cluster kubeconfig save "${{ inputs.cluster_name }}"
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade "${{ steps.branch.outputs.slug }}" "${{ inputs.helm_chart_path }}" \
+            --create-namespace \
+            --namespace "${{ steps.branch.outputs.slug }}" \
+            --install \
+            --set image.tag="${{ steps.branch.outputs.slug }}" \
+            --set ingress.host="${{ steps.branch.outputs.slug }}.${{ inputs.base_domain }}" \
+            ${{ inputs.helm_extra_args }}
+
+      - name: Upsert preview URL comment on PR
+        uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: '${{ inputs.url_scheme }}://${{ steps.branch.outputs.slug }}.${{ inputs.base_domain }}'
+        with:
+          script: |
+            const url = process.env.PREVIEW_URL;
+            const marker = '<!-- ephemeral-env-comment -->';
+            const body = `${marker}\n## Preview environment\n\n🚀 **URL:** [${url}](${url})\n\n_Updated: ${new Date().toISOString()}_`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  cleanup-preview:
+    name: Delete preview environment
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      packages: write
+    steps:
+      - name: Sanitize branch name
+        id: branch
+        run: |
+          SLUG="${{ github.head_ref }}"
+          SLUG="${SLUG//\//-}"
+          SLUG=$(echo "$SLUG" | tr '[:upper:]' '[:lower:]')
+          SLUG=$(echo "$SLUG" | sed 's/[^a-z0-9-]//g')
+          SLUG=$(echo "$SLUG" | cut -c1-53)
+          echo "slug=$SLUG" >> $GITHUB_OUTPUT
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DOCTL_TOKEN }}
+
+      - name: Configure Kubernetes kubeconfig
+        run: doctl kubernetes cluster kubeconfig save "${{ inputs.cluster_name }}"
+
+      - name: Delete Helm release
+        run: |
+          helm uninstall "${{ steps.branch.outputs.slug }}" \
+            --namespace "${{ steps.branch.outputs.slug }}" \
+            --ignore-not-found || true
+
+      - name: Delete Kubernetes namespace
+        run: kubectl delete namespace "${{ steps.branch.outputs.slug }}" --ignore-not-found
+
+      - name: Delete image from GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          ORG=$(echo "${{ inputs.organization }}" | tr '[:upper:]' '[:lower:]')
+          PROJECT=$(echo "${{ inputs.project_name }}" | tr '[:upper:]' '[:lower:]')
+          SLUG="${{ steps.branch.outputs.slug }}"
+
+          VERSION_ID=$(gh api "/orgs/${ORG}/packages/container/${PROJECT}/versions" \
+            --jq ".[] | select(.metadata.container.tags[] == \"${SLUG}\") | .id" \
+            2>/dev/null || true)
+
+          if [ -z "$VERSION_ID" ]; then
+            VERSION_ID=$(gh api "/user/packages/container/${PROJECT}/versions" \
+              --jq ".[] | select(.metadata.container.tags[] == \"${SLUG}\") | .id" \
+              2>/dev/null || true)
+          fi
+
+          if [ -n "$VERSION_ID" ]; then
+            gh api -X DELETE "/orgs/${ORG}/packages/container/${PROJECT}/versions/${VERSION_ID}" \
+              2>/dev/null || \
+            gh api -X DELETE "/user/packages/container/${PROJECT}/versions/${VERSION_ID}" \
+              2>/dev/null || true
+            echo "Deleted GHCR image tag: ${SLUG}"
+          else
+            echo "Image tag '${SLUG}' not found in GHCR, skipping."
+          fi
+
+      - name: Comment cleanup on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- ephemeral-env-comment -->';
+            const body = `${marker}\n## Preview environment\n\n🗑️ Preview environment has been deleted.`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
