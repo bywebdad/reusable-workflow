@@ -54,6 +54,11 @@ on:
         type: string
         default: ''
         description: 'Extra args appended to helm upgrade (e.g. --set foo=bar --values preview.yaml)'
+      env_file_path:
+        required: false
+        type: string
+        default: ''
+        description: 'Path to .env file to copy before Docker build (e.g. ./env/.env.preview)'
       url_scheme:
         required: false
         type: string
@@ -105,6 +110,10 @@ jobs:
 
       - name: Login to GitHub Container Registry
         run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ inputs.organization }}" --password-stdin
+
+      - name: Prepare env file
+        if: inputs.env_file_path != ''
+        run: cp "${{ inputs.env_file_path }}" .env
 
       - name: Build image (Dockerfile)
         if: inputs.build_method == 'dockerfile'
