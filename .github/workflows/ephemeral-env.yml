@@ -66,6 +66,9 @@ on:
       GHCR_TOKEN:
         required: true
         description: 'GitHub Container Registry token (write:packages scope)'
+      GH_TOKEN:
+        required: false
+        description: 'GitHub token for checkout in private cross-org repos'
 
 jobs:
   deploy-preview:
@@ -79,6 +82,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN || github.token }}
 
       - name: Sanitize branch name
         id: branch
