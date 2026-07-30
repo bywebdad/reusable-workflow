@@ -103,17 +103,11 @@ jobs:
 
       - name: Build image with Dockerfile
         if: inputs.build_method == 'dockerfile'
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          SECRET_ARGS=()
-          if [[ -n "$NPM_TOKEN" ]]; then
-            SECRET_ARGS+=(--secret id=npm_token,env=NPM_TOKEN)
-          fi
           if [[ "${{ inputs.add_timestamp_tag }}" == "true" ]]; then
-            docker build "${SECRET_ARGS[@]}" -t ${{ steps.vars.outputs.IMAGE_NAME }} -t ${{ steps.vars.outputs.TIMESTAMP_TAG }} -f ${{ inputs.dockerfile_path }} ${{ inputs.build_context }}
+            docker build -t ${{ steps.vars.outputs.IMAGE_NAME }} -t ${{ steps.vars.outputs.TIMESTAMP_TAG }} -f ${{ inputs.dockerfile_path }} ${{ inputs.build_context }}
           else
-            docker build "${SECRET_ARGS[@]}" -t ${{ steps.vars.outputs.IMAGE_NAME }} -f ${{ inputs.dockerfile_path }} ${{ inputs.build_context }}
+            docker build -t ${{ steps.vars.outputs.IMAGE_NAME }} -f ${{ inputs.dockerfile_path }} ${{ inputs.build_context }}
           fi
 
       - name: Add timestamp tag if requested
